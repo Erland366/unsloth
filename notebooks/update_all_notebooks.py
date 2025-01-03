@@ -181,10 +181,8 @@ def main():
 def update_readme(
     readme_path, notebooks_dir, type_order=None, kaggle_accelerator="nvidiaTeslaT4"
 ):
-    base_url_colab = (
-        "https://colab.research.google.com/github/unslothai/unsloth/notebooks/"
-    )
-    base_url_kaggle = "https://www.kaggle.com/notebooks/welcome?src=https://github.com/unslothai/unsloth/notebooks/"
+    base_url_colab = "https://colab.research.google.com/github/unslothai/unsloth/blob/main/notebooks/"
+    base_url_kaggle = "https://www.kaggle.com/notebooks/welcome?src=https://github.com/unslothai/unsloth/blob/main/notebooks/"
 
     paths = glob(os.path.join(notebooks_dir, "*.ipynb"))
 
