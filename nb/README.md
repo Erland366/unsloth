@@ -17,7 +17,7 @@
 
 # 📒 Fine-tuning Notebooks
 Below are our notebooks for Google Colab categorized by model.
-You can also view our [Kaggle notebooks here](https://github.com/unslothai/unsloth/notebooks/#Kaggle-Notebooks).
+You can also view our [Kaggle notebooks here](https://github.com/unslothai/unsloth/nb/#Kaggle-Notebooks).
 
 ### Llama Notebooks
 | Model | Type | Colab Link | 
@@ -127,7 +127,7 @@ Click for all our Kaggle notebooks categorized by model:
 
 </details>
 
-<!-- Last updated on: 2025-01-05 16:14:09 -->
+<!-- Last updated on: 2025-01-05 16:25:19 -->
 <!-- End of Notebook Links -->
 
 # ✨ Contributing to Notebooks
@@ -151,7 +151,7 @@ If you'd like to contribute to our notebooks, here's a guide to get you started:
     python update_all_notebooks.py
     ```
     This script will automatically:
-    *   Copy your notebook from `original_template` to the `notebooks` directory.
+    *   Copy your notebook from `original_template` to the `nb` directory.
     *   Update the notebook's internal sections (like Installation, News) to ensure consistency.
     *   Add your notebook to the appropriate list in this `README.md` file.
 5. **Check Your Changes:** Before submitting your changes, make sure to check that your notebook is correctly displayed in the README.md. After making sure that your notebook is correctly displayed, you can finalize it by calling :
