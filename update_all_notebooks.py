@@ -297,7 +297,7 @@ def update_readme(
         content_after = readme_content[end_index:]
 
         temp = (
-            "(https://github.com/unslothai/unsloth/notebooks/#Kaggle-Notebooks).\n\n"
+            "(https://github.com/unslothai/unsloth/nb/#Kaggle-Notebooks).\n\n"
             if args.to_main_repo
             else "(https://github.com/unslothai/notebooks/#Kaggle-Notebooks).\n\n"
         )
