@@ -116,6 +116,7 @@ def LlamaAttention_fast_forward_inference(
     position_ids,
     do_prefill = False,
     attention_mask = None,
+    position_embeddings = None,
 ):
     """
         https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py#L406
@@ -202,8 +203,7 @@ def LlamaAttention_fast_forward_inference(
 
     # Need to do it prior 2 steps before hitting full on short KV cache
     # or else error
-    self.rotary_emb.extend_rope_embedding(Vn, seq_len + 2)
-    cos, sin = self.rotary_emb.get_cached(kv_seq_len)
+    cos, sin = position_embeddings
     cos = cos[position_ids].unsqueeze(1)
     sin = sin[position_ids].unsqueeze(1)
     h = self.half_head_dim
@@ -899,6 +899,7 @@ def LlamaModel_fast_forward_inference(
 ):
     input_ids = input_ids[:,:self.max_seq_length]
     hidden_states = self.model.embed_tokens(input_ids)
+    position_embeddings = self.rotary_emb(hidden_states, position_ids)
     hidden_states = hidden_states.to(self.config.torch_dtype)
     bsz, q_len, hd = hidden_states.shape
     seq_len = past_key_values[0][0].shape[-2]
@@ -925,6 +926,7 @@ def LlamaModel_fast_forward_inference(
             position_ids = position_ids,
             attention_mask = attention_mask,
             do_prefill = not hasattr(decoder_layer.self_attn, "paged_attention"),
+            position_embeddings = position_embeddings,
         )
         hidden_states += residual
 
@@ -963,7 +965,6 @@ def CausalLM_fast_forward(fast_forward_inference):
         num_logits_to_keep: Optional[int] = 0,
         *args, **kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-        
         if past_key_values is not None:
             outputs = fast_forward_inference(
                 self,
@@ -1823,9 +1824,9 @@ class FastLlamaModel:
             "_inner_training_loop",
             "_fast_inner_training_loop", 1,
         )
-        exec(inner_training_loop, globals())
+        func = create_dynamic_function(inner_training_loop, "_fast_inner_training_loop")
 
-        Trainer._inner_training_loop = _fast_inner_training_loop
+        Trainer._inner_training_loop = func
         inner_training_loop = inner_training_loop.replace(
             "is_torch_tpu_available()",
             "False",
@@ -1837,8 +1838,8 @@ class FastLlamaModel:
             "is_sagemaker_mp_enabled()",
             "False",
         )
-        exec(inner_training_loop, globals())
-        Trainer._inner_training_loop = _fast_inner_training_loop
+        func = create_dynamic_function(inner_training_loop, "_fast_inner_training_loop")
+        Trainer._inner_training_loop = func
 
         # Save max_seq_length
         model.max_seq_length = max_position_embeddings
@@ -1877,7 +1878,7 @@ class FastLlamaModel:
 
         # Add save modules
         patch_saving_functions(model)
-        Trainer._inner_training_loop = _fast_inner_training_loop
+        Trainer._inner_training_loop = func
 
         # Fix gradient accumulation
         patch_gradient_accumulation_fix(Trainer)

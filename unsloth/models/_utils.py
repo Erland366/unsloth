@@ -65,6 +65,7 @@ __all__ = [
     "process_vision_info",
     "unsloth_compile_transformers",
     "patch_fast_lora",
+    "create_dynamic_function",
 ]
 
 import torch
@@ -84,6 +85,7 @@ from unsloth_zoo.patching_utils import (
     patch_torch_compile,
     patch_model_and_tokenizer,
     patch_compiled_autograd,
+    create_dynamic_function,
 )
 from unsloth_zoo.gradient_checkpointing import (
     Unsloth_Offloaded_Gradient_Checkpointer,
@@ -1145,8 +1147,8 @@ def patch_gradient_accumulation_fix(Trainer):
         function,
     )
     
-    exec(function, globals())
-    Trainer.training_step = _unsloth_training_step
+    func = create_dynamic_function(function, "_unsloth_training_step")
+    Trainer.training_step = func
 pass
 
 
