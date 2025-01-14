@@ -462,10 +462,9 @@ __INT_TO_FLOAT_MAPPER = \
         "Qwen/Qwen2-VL-7B-Instruct",
         "unsloth/Qwen2-VL-7B-Instruct-bnb-4bit",
     ),
-    "unsloth/Qwen2-VL-72B-Instruct-unsloth-bnb-4bit" : (
+    "unsloth/Qwen2-VL-72B-Instruct-bnb-4bit" : (
         "unsloth/Qwen2-VL-72B-Instruct",
         "Qwen/Qwen2-VL-72B-Instruct",
-        "unsloth/Qwen2-VL-72B-Instruct-bnb-4bit",
     ),
     "unsloth/Llama-3.2-11B-Vision-Instruct-unsloth-bnb-4bit" : (
         "unsloth/Llama-3.2-11B-Vision-Instruct",
@@ -519,6 +518,11 @@ __INT_TO_FLOAT_MAPPER = \
     "unsloth/Llama-3.3-70B-Instruct-bnb-4bit" : (
         "unsloth/Llama-3.3-70B-Instruct",
         "meta-llama/Llama-3.3-70B-Instruct",
+    ),
+    "unsloth/phi-4-unsloth-bnb-4bit" : (
+        "unsloth/phi-4",
+        "microsoft/phi-4",
+        "unsloth/phi-4-bnb-4bit",
     ),
 }
 
