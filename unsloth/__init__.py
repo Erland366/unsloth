@@ -213,3 +213,6 @@ from .trainer import *
 
 # Patch TRL trainers for backwards compatibility
 _patch_trl_trainer()
+
+# Patch ORPO Trainer to use chunked loss instead
+from unsloth_zoo.patching_utils import patch_orpo_trainer

@@ -116,7 +116,6 @@ def LlamaAttention_fast_forward_inference(
     position_ids,
     do_prefill = False,
     attention_mask = None,
-    position_embeddings = None,
 ):
     """
         https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py#L406
@@ -899,7 +898,6 @@ def LlamaModel_fast_forward_inference(
 ):
     input_ids = input_ids[:,:self.max_seq_length]
     hidden_states = self.model.embed_tokens(input_ids)
-    position_embeddings = self.rotary_emb(hidden_states, position_ids)
     hidden_states = hidden_states.to(self.config.torch_dtype)
     bsz, q_len, hd = hidden_states.shape
     seq_len = past_key_values[0][0].shape[-2]
@@ -926,7 +924,6 @@ def LlamaModel_fast_forward_inference(
             position_ids = position_ids,
             attention_mask = attention_mask,
             do_prefill = not hasattr(decoder_layer.self_attn, "paged_attention"),
-            position_embeddings = position_embeddings,
         )
         hidden_states += residual
 
