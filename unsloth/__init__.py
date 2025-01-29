@@ -218,3 +218,4 @@ _patch_trl_trainer()
 
 # Patch ORPO Trainer to use chunked loss instead
 from unsloth_zoo.patching_utils import patch_orpo_trainer
+patch_orpo_trainer()
