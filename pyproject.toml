@@ -22,8 +22,8 @@ classifiers = [
     "Programming Language :: Python",
 ]
 dependencies = [
-    "unsloth_zoo @ git+https://github.com/unslothai/unsloth-zoo.git", # Modified line to install from GitHub,
-    "torch>=2.4.0",
+    "unsloth_zoo>=2025.1.4",
+    "torch>=2.4.0,<=2.5.1",
     "xformers>=0.0.27.post2,<=0.0.29",
     "bitsandbytes",
     "triton>=3.0.0 ; platform_system == 'Linux'",
