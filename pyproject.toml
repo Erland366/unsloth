@@ -22,7 +22,7 @@ classifiers = [
     "Programming Language :: Python",
 ]
 dependencies = [
-    "unsloth_zoo>=2025.1.4",
+    "unsloth_zoo @ git+https://github.com/unslothai/unsloth-zoo.git", # Modified line to install from GitHub,
     "torch>=2.4.0",
     "xformers>=0.0.27.post2,<=0.0.29",
     "bitsandbytes",
