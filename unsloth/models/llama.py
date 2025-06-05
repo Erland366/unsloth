@@ -22,6 +22,7 @@ from ._utils import patch_unsloth_smart_gradient_checkpointing
 from ._utils import __version__
 from torch.nn.functional import scaled_dot_product_attention
 from transformers import __version__ as transformers_version
+from trl import get_kbit_device_map
 from unsloth_zoo.utils import Version, _get_dtype
 from unsloth_zoo.peft_utils import SKIP_QUANTIZATION_MODULES
 transformers_version = Version(transformers_version)
@@ -1710,6 +1711,7 @@ class FastLlamaModel:
         if token is None: token = get_token()
         if model_patcher is None: model_patcher = FastLlamaModel
         SUPPORTS_BFLOAT16 = is_bfloat16_supported()
+        IS_ACCELERATE = is_accelerate()
         gpu_stats = torch.cuda.get_device_properties(0)
         max_memory = round(gpu_stats.total_memory / 1024 / 1024 / 1024, 3)
 
@@ -1803,12 +1805,17 @@ class FastLlamaModel:
 
         bnb_config = None
         if load_in_4bit:
+            bnb_4bit_quant_storage = torch.uint8
+            if IS_ACCELERATE:
+                bnb_4bit_quant_storage = torch.float16 if not SUPPORTS_BFLOAT16 else torch.bfloat16
+
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit              = True,
                 bnb_4bit_use_double_quant = True,
                 bnb_4bit_quant_type       = "nf4",
                 bnb_4bit_compute_dtype    = dtype,
                 llm_int8_skip_modules     = SKIP_QUANTIZATION_MODULES.copy(),
+                bnb_4bit_quant_storage    = bnb_4bit_quant_storage,
             )
         pass
 
@@ -1819,6 +1826,9 @@ class FastLlamaModel:
 
         # Cannot be None, since HF now checks for the config
         if load_in_4bit: kwargs["quantization_config"] = bnb_config
+
+        if IS_ACCELERATE:
+            device_map = get_kbit_device_map()
         
         if not fast_inference:
             model = AutoModelForCausalLM.from_pretrained(
@@ -1959,7 +1969,13 @@ class FastLlamaModel:
             "is_torch_tpu_available()",
             "False",
         )
-        exec(inner_training_loop, globals())
+        from edd_utils import create_dynamic_function
+
+        _fast_inner_training_loop = create_dynamic_function(
+            inner_training_loop,
+            "_fast_inner_training_loop",
+
+        )
         Trainer._inner_training_loop = _fast_inner_training_loop
 
         # Save max_seq_length

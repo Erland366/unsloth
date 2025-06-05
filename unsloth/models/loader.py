@@ -14,6 +14,7 @@
 
 from ._utils import (
     is_bfloat16_supported,
+    is_accelerate,
     is_vLLM_available,
     HAS_FLASH_ATTENTION,
     HAS_FLASH_ATTENTION_SOFTCAPPING,
@@ -410,10 +411,17 @@ class FastLanguageModel(FastLlamaModel):
 
         if load_in_4bit:
             # Fix up bitsandbytes config
+            bnb_dtype = model.config.to_dict()["torch_dtype"]
+            SUPPORTS_BFLOAT16 = is_bfloat16_supported()
+            IS_ACCELERATE = is_accelerate()
+            bnb_4bit_quant_storage = torch.uint8
+            if IS_ACCELERATE:
+                bnb_4bit_quant_storage = torch.float16 if not SUPPORTS_BFLOAT16 else torch.bfloat16
             quantization_config = \
             {
                 # Sometimes torch_dtype is not a string!!
-                "bnb_4bit_compute_dtype"           : model.config.to_dict()["torch_dtype"],
+                "bnb_4bit_quant_storage"           : bnb_4bit_quant_storage,
+                "bnb_4bit_compute_dtype"           : bnb_dtype,
                 "bnb_4bit_quant_type"              : "nf4",
                 "bnb_4bit_use_double_quant"        : True,
                 "llm_int8_enable_fp32_cpu_offload" : False,
@@ -779,10 +787,17 @@ class FastModel(FastBaseModel):
 
         if load_in_4bit:
             # Fix up bitsandbytes config
+            bnb_dtype = model.config.to_dict()["torch_dtype"]
+            SUPPORTS_BFLOAT16 = is_bfloat16_supported()
+            IS_ACCELERATE = is_accelerate()
+            bnb_4bit_quant_storage = torch.uint8
+            if IS_ACCELERATE:
+                bnb_4bit_quant_storage = torch.float16 if not SUPPORTS_BFLOAT16 else torch.bfloat16
             quantization_config = \
             {
                 # Sometimes torch_dtype is not a string!!
-                "bnb_4bit_compute_dtype"           : model.config.to_dict()["torch_dtype"],
+                "bnb_4bit_quant_storage"           : bnb_4bit_quant_storage,
+                "bnb_4bit_compute_dtype"           : bnb_dtype,
                 "bnb_4bit_quant_type"              : "nf4",
                 "bnb_4bit_use_double_quant"        : True,
                 "llm_int8_enable_fp32_cpu_offload" : False,

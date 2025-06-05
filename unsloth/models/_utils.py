@@ -17,6 +17,7 @@ __version__ = "2025.5.10"
 __all__ = [
     "SUPPORTS_BFLOAT16",
     "is_bfloat16_supported",
+    "is_accelerate",
     "is_vLLM_available",
 
     "prepare_model_for_kbit_training",
@@ -821,11 +822,14 @@ def offload_output_embeddings(model, temporary_location : str = "_unsloth_tempor
     return
 pass
 
-
 # Fixes a weird Torch 2.3 bug which says T4s have bfloat16
 def is_bfloat16_supported():
     return SUPPORTS_BFLOAT16
 pass
+
+def is_accelerate():
+    return "ACCELERATE_USE_FSDP" in "".join(os.environ.keys())
+    # return True
 
 def is_vLLM_available():
     return _is_package_available("vllm")

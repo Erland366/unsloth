@@ -288,11 +288,11 @@ class FastBaseModel:
                 if model_type_arch != "siglip": break
 
         statistics = \
-           f"==((====))==  Unsloth {__version__}: Fast {model_type_arch.title()} patching. Transformers: {transformers_version}.{vllm_version}\n"\
-           f"   {chr(92)}{chr(92)}   /|    {gpu_stats.name}. Num GPUs = {torch.cuda.device_count()}. Max memory: {max_memory} GB. Platform: {platform_system}.\n"\
-           f"O^O/ {chr(92)}_/ {chr(92)}    Torch: {torch.__version__}. CUDA: {gpu_stats.major}.{gpu_stats.minor}. CUDA Toolkit: {torch.version.cuda}. Triton: {triton_version}\n"\
-           f"{chr(92)}        /    Bfloat16 = {str(SUPPORTS_BFLOAT16).upper()}. FA [Xformers = {xformers_version}. FA2 = {HAS_FLASH_ATTENTION}]\n"\
-           f' "-____-"     Free license: http://github.com/unslothai/unsloth'
+        f"==((====))==  Unsloth {__version__}: Fast {model_type_arch.title()} patching. Transformers: {transformers_version}.{vllm_version}\n"\
+        f"   {chr(92)}{chr(92)}   /|    {gpu_stats.name}. Num GPUs = {torch.cuda.device_count()}. Max memory: {max_memory} GB. Platform: {platform_system}.\n"\
+        f"O^O/ {chr(92)}_/ {chr(92)}    Torch: {torch.__version__}. CUDA: {gpu_stats.major}.{gpu_stats.minor}. CUDA Toolkit: {torch.version.cuda}. Triton: {triton_version}\n"\
+        f"{chr(92)}        /    Bfloat16 = {str(SUPPORTS_BFLOAT16).upper()}. FA [Xformers = {xformers_version}. FA2 = {HAS_FLASH_ATTENTION}]\n"\
+        f' "-____-"     Free license: http://github.com/unslothai/unsloth'
         print(statistics)
 
         # Warn about fast transfers
@@ -357,11 +357,16 @@ class FastBaseModel:
         if load_in_4bit and load_in_8bit:
             raise RuntimeError("Unsloth: Can only load in 4bit or 8bit, not both!")
         if load_in_4bit:
+            IS_ACCELERATE = is_accelerate()
+            bnb_4bit_quant_storage = torch.uint8
+            if IS_ACCELERATE:
+                bnb_4bit_quant_storage = torch.float16 if not SUPPORTS_BFLOAT16 else torch.bfloat16
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit              = True,
                 bnb_4bit_use_double_quant = True,
                 bnb_4bit_quant_type       = "nf4",
                 bnb_4bit_compute_dtype    = bnb_compute_dtype,
+                bnb_4bit_quant_storage    = bnb_4bit_quant_storage,
                 llm_int8_skip_modules     = SKIP_QUANTIZATION_MODULES.copy(),
             )
         elif load_in_8bit:
