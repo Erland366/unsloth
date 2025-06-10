@@ -406,7 +406,9 @@ def fast_cross_entropy_loss(
         logit_scaling,
     )
     if n_items is None:
-        n_items = torch.count_nonzero(labels != -100).to(loss.device)
+        n_items = torch.count_nonzero(labels != -100)
+    n_items = n_items.to(loss.device)
+    return loss.sum() / n_items
     return loss.sum() / n_items
 pass
 if (Version(torch.__version__) < Version("2.4.0")) and \
