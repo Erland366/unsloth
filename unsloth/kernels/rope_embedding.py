@@ -99,6 +99,8 @@ class Fast_RoPE_Embedding(torch.autograd.Function):
         mod : int
         div, mod = divmod(n_heads, ROPE_GROUP_SIZE)
         n_groups : int = div + (mod != 0)
+        cos = cos.to(Q.device)
+        sin = sin.to(Q.device)
 
         with torch_cuda_device(Q.device):
             _rope_embedding[(n_rows, n_groups, )](
