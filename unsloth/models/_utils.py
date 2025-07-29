@@ -67,6 +67,7 @@ __all__ = [
     "patch_fast_lora",
     "validate_loftq_config",
     "RaiseUninitialized",
+    "is_accelerate_initialized"
 ]
 
 import torch
@@ -1423,3 +1424,10 @@ def validate_loftq_config(loftq_config, lora_dropout, bias, init_lora_weights, m
     pass
 
     return loftq_config
+
+def is_accelerate_initialized():
+    import os
+    # return any(
+    #     x.startswith("ACCELERATE_") for x in os.environ.keys()
+    # ) or torch.distributed.is_initialized()
+    return True

@@ -1952,13 +1952,16 @@ class FastLlamaModel:
             if IS_FALCON_H1:
                 # we cannot quantize out_proj layer due to mamba kernels: https://github.com/tiiuae/Falcon-H1/issues/13#issuecomment-2918671274
                 llm_int8_skip_modules.append("out_proj")
+
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit              = True,
                 bnb_4bit_use_double_quant = True,
                 bnb_4bit_quant_type       = "nf4",
                 bnb_4bit_compute_dtype    = dtype,
+                bnb_4bit_quant_storage = dtype if is_accelerate_initialized() else torch.uint8,
                 llm_int8_skip_modules     = llm_int8_skip_modules,
             )
+
         pass
 
         # https://huggingface.co/togethercomputer/LLaMA-2-7B-32K/discussions/12
