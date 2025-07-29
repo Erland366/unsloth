@@ -192,16 +192,23 @@ def get_lora_parameters(proj):
 
     # if not hasattr(proj, "disable_adapters") or proj.disable_adapters or proj.merged:
     if getattr(proj, "disable_adapters", True) or proj.merged:
-        return W, getattr(W, "quant_state", None), None, None, None
+        quant_state = getattr(W, "quant_state", None)
+        if quant_state is None:
+            quant_state = getattr(base_layer, "quant_state", None)
+        return W, quant_state, None, None, None
     pass
 
     adapter = getattr(proj, "active_adapters", None)
     if adapter is None: adapter = getattr(proj, "active_adapter", ("default"))
     adapter = adapter[0]
 
+    quant_state = getattr(W, "quant_state", None)
+    if quant_state is None:
+        quant_state = getattr(base_layer, "quant_state", None)
+
     return (
         W,
-        getattr(W, "quant_state", None),
+        quant_state,
         proj.lora_A [adapter].weight,
         proj.lora_B [adapter].weight,
         proj.scaling[adapter],
@@ -216,16 +223,23 @@ def get_lora_parameters_bias(proj):
 
     # if not hasattr(proj, "disable_adapters") or proj.disable_adapters or proj.merged:
     if getattr(proj, "disable_adapters", True) or proj.merged:
-        return W, getattr(W, "quant_state", None), None, None, None, base_layer.bias
+        quant_state = getattr(W, "quant_state", None)
+        if quant_state is None:
+            quant_state = getattr(base_layer, "quant_state", None)
+        return W, quant_state, None, None, None, base_layer.bias
     pass
 
     adapter = getattr(proj, "active_adapters", None)
     if adapter is None: adapter = getattr(proj, "active_adapter", ("default"))
     adapter = adapter[0]
 
+    quant_state = getattr(W, "quant_state", None)
+    if quant_state is None:
+        quant_state = getattr(base_layer, "quant_state", None)
+
     return (
         W,
-        getattr(W, "quant_state", None),
+        quant_state,
         proj.lora_A [adapter].weight,
         proj.lora_B [adapter].weight,
         proj.scaling[adapter],

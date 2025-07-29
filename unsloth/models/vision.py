@@ -398,6 +398,7 @@ class FastBaseModel:
                 bnb_4bit_use_double_quant = True,
                 bnb_4bit_quant_type       = "nf4",
                 bnb_4bit_compute_dtype    = bnb_compute_dtype,
+                bnb_4bit_quant_storage = bnb_compute_dtype if is_accelerate_initialized() else torch.uint8,
                 llm_int8_skip_modules     = SKIP_QUANTIZATION_MODULES.copy(),
             )
         elif load_in_8bit:
