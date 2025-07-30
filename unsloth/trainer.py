@@ -36,6 +36,7 @@ __all__ = [
     "unsloth_train",
     "_patch_trl_trainer",
     "UnslothVisionDataCollator",
+    "_patch_fsdp_trainer_fsdp_plugin",
 ]
 
 # Unsloth gradient accumulation fix:
@@ -230,3 +231,51 @@ def _patch_trl_trainer():
 
     trl.__UNSLOTH_BACKWARDS_COMPATIBLE__ = True
 pass
+
+def _patch_fsdp_trainer_fsdp_plugin():
+    import re
+    import inspect
+    from transformers import Trainer
+
+    old_create_accelerator_and_postprocess = inspect.getsource(Trainer.create_accelerator_and_postprocess)
+    start = old_create_accelerator_and_postprocess.find("if self.is_fsdp_enabled:")
+    end = old_create_accelerator_and_postprocess.find('if self.is_deepspeed_enabled and getattr(self.args, "hf_deepspeed_config", None) is None:')
+    original_debug = old_create_accelerator_and_postprocess[start:end]
+
+    import transformers.trainer
+    items_in_trainer = dir(transformers.trainer)
+    good_items = []
+    for item in items_in_trainer:
+        if item in old_create_accelerator_and_postprocess: good_items.append(item)
+    pass
+    exec("from transformers.trainer import (" + ", ".join(x for x in good_items) + ")", globals())
+
+    spaces = re.search(r'\n([\s\t]{1,})', original_debug).group(0)[1:]
+    front_spaces = re.match(r'([\s\t]{1,})', old_create_accelerator_and_postprocess).group(0)
+    new_checking = """if self.is_fsdp_enabled:
+        fsdp_plugin = self.accelerator.state.fsdp_plugin
+        for key, value in self.args.fsdp_config.items():
+            if hasattr(fsdp_plugin, key):
+                setattr(fsdp_plugin, key, value)
+
+        from unsloth.models._utils import get_repetitive_layer_name
+        setattr(fsdp_plugin, "transformer_cls_names_to_wrap", get_repetitive_layer_name(str(self.model)))
+
+        # Force to use FSDP2
+        setattr(fsdp_plugin, "fsdp_version", 2)
+        if fsdp_plugin.activation_checkpointing and self.args.gradient_checkpointing:
+            raise ValueError(
+                "The 'activation_checkpointing' in FSDP config and the 'gradient_checkpointing' in training args "
+                "cannot be set to True simultaneously. Please use FSDP's built-in 'activation_checkpointing' "
+                "when using FSDP.")"""
+    new_checking = new_checking.split('\n')
+    new_checking = "\n".join([new_checking[0]] + [spaces + x[4:] for x in new_checking[1:]] + [spaces[:-4]])
+    new_create_accelerator_and_postprocess = old_create_accelerator_and_postprocess.replace(original_debug, new_checking)
+    new_create_accelerator_and_postprocess = new_create_accelerator_and_postprocess.replace(
+        "create_accelerator_and_postprocess",
+        "updated_create_accelerator_and_postprocess"
+    )
+    new_create_accelerator_and_postprocess = "\n".join([x[4:] for x in new_create_accelerator_and_postprocess.split('\n')])
+    exec(new_create_accelerator_and_postprocess, globals())
+
+    Trainer.create_accelerator_and_postprocess = updated_create_accelerator_and_postprocess

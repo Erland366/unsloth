@@ -1427,7 +1427,30 @@ def validate_loftq_config(loftq_config, lora_dropout, bias, init_lora_weights, m
 
 def is_accelerate_initialized():
     import os
-    # return any(
-    #     x.startswith("ACCELERATE_") for x in os.environ.keys()
-    # ) or torch.distributed.is_initialized()
-    return True
+
+    # TODO: Is this correct?
+    return any(
+        x.startswith("ACCELERATE_") for x in os.environ.keys()
+    ) or torch.distributed.is_initialized()
+
+import re
+
+def get_repetitive_layer_name(model_string: str) -> str | None:
+    lines = model_string.split('\n')
+    candidates = []
+    # Regex to find lines like: `(0-31): 32 x MistralDecoderLayer(`
+    # It captures the module name in group 1.
+    repetition_pattern = re.compile(r"^\s*\(\d+-\d+\): \d+ x (\w+)\(")
+
+    for line in lines:
+        match = repetition_pattern.search(line)
+        if match:
+            indent_level = len(line) - len(line.lstrip(' '))
+            module_name = match.group(1)
+            candidates.append((indent_level, module_name))
+
+    if candidates:
+        candidates.sort(key=lambda x: x[0])
+        return candidates[0][1]
+
+    return None

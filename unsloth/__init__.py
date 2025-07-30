@@ -249,3 +249,6 @@ from .trainer import *
 
 # Patch TRL trainers for backwards compatibility
 _patch_trl_trainer()
+
+# Patch Trainer FSDP to support passing args to FSDP plugin
+_patch_fsdp_trainer_fsdp_plugin()

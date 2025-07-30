@@ -17,7 +17,6 @@ __all__ = [
     "vLLMSamplingParams",
 ]
 
-import torch
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 import inspect
 import os
@@ -44,6 +43,7 @@ torch_compile_options = {
 }
 
 from trl import __version__ as trl_version
+from ._utils import is_accelerate_initialized, get_repetitive_layer_name
 
 def vLLMSamplingParams(**kwargs):
     from vllm import SamplingParams
@@ -108,6 +108,7 @@ import numpy as np
 from contextlib import nullcontext
 from torch.nn import functional as F
 from transformers import DataCollatorForSeq2Seq, DataCollatorForLanguageModeling as TransformersDataCollatorForLanguageModeling
+from torch.distributed.fsdp import MixedPrecisionPolicy
 
 torch_compile_options = {{
     "epilogue_fusion"   : True,
@@ -487,6 +488,38 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         # "dataloader_prefetch_factor"    : 2,
         # "dataloader_num_workers"        : 2, # Default is 0 means 1
     }
+
+    if is_accelerate_initialized():
+        # Check if torchao is installed
+        try:
+            import torchao
+            optimizer = "adamw_torch_8bit"
+        except ImportError:
+            print("Unsloth: TorchAO is not installed in multiGPU settings, using `adamw_torch` optimizer instead of `adamw_torch_8bit`")
+            print("Unsloth: Please install TorchAO with `pip install torchao` to use 8-bit optimizers in multiGPU settings!")
+            optimizer = "adamw_torch"
+
+        extra_args += \
+        "if not fsdp:\n"\
+        "    fsdp = ['full_shard']\n"\
+        "if not fsdp_config:\n"\
+        "    fsdp_config = dict(\n"\
+        "        activation_checkpointing = False, # Use this for very long context\n"\
+        "        reshard_after_forward = True,\n"\
+        "        fsdp_version = 2,\n"\
+        "        offload_params = True,\n"\
+        "        fsdp_state_dict_type = 'FULL_STATE_DICT',\n"\
+        "        fsdp_cpu_ram_efficient_loading = False,\n"\
+        "        auto_wrap_policy = 'TRANSFORMER_BASED_WRAP',\n"\
+        "        mixed_precision_policy = MixedPrecisionPolicy(\n"\
+        "            param_dtype = torch.float16,\n"\
+        "            reduce_dtype = torch.float16,\n"\
+        "            output_dtype = torch.float32\n"\
+        "        )\n"\
+        "    )\n"
+        replacements["optim"] = optimizer
+
+
     for k, v in replacements.items():
         x = f"{k}( = [^,\n]{{1,}})?,\n"
         y = f"'{v}'" if type(v) is str else f"{v}"
