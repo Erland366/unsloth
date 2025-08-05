@@ -657,6 +657,14 @@ class FastBaseModel:
         # Add for_inference and for_training
         model.for_training  = functools.partial(FastBaseModel.for_training,  model)
         model.for_inference = functools.partial(FastBaseModel.for_inference, model)
+
+        if is_accelerate_initialized():
+            from torch.distributed.fsdp import register_fsdp_forward_method
+
+            # Need to do this or else the model `generate` method will hang
+            # This is because fsdp call something else during forward
+            # See : https://github.com/huggingface/transformers/issues/30228
+            register_fsdp_forward_method(model, "generate")
         return model
     pass
 
