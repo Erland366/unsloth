@@ -931,6 +931,26 @@ __INT_TO_FLOAT_MAPPER = \
         "openai/gpt-oss-120b",
         "unsloth/gpt-oss-120b-unsloth-bnb-4bit",
     ),
+    "unsloth/Qwen3-4B-Instruct-2507-unsloth-bnb-4bit" : (
+        "unsloth/Qwen3-4B-Instruct-2507",
+        "Qwen/Qwen3-4B-Instruct-2507",
+        "unsloth/Qwen3-4B-Instruct-2507-bnb-4bit",
+    ),
+    "unsloth/Qwen3-4B-Thinking-2507-unsloth-bnb-4bit" : (
+        "unsloth/Qwen3-4B-Thinking-2507",
+        "Qwen/Qwen3-4B-Thinking-2507",
+        "unsloth/Qwen3-4B-Thinking-2507-bnb-4bit",
+    ),
+    "unsloth/gemma-3-270m-it-unsloth-bnb-4bit" : (
+        "unsloth/gemma-3-270m-it",
+        "google/gemma-3-270m-it",
+        "unsloth/gemma-3-270m-it-bnb-4bit",
+    ),
+    "unsloth/gemma-3-270m-unsloth-bnb-4bit" : (
+        "unsloth/gemma-3-270m",
+        "google/gemma-3-270m",
+        "unsloth/gemma-3-270m-bnb-4bit",
+    ),
 }
 
 INT_TO_FLOAT_MAPPER  = {}

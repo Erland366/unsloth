@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from unsloth_zoo.utils import Version
+from unsloth_zoo.hf_utils import dtype_from_config, HAS_TORCH_DTYPE
 from bitsandbytes.nn import Linear4bit as Bnb_Linear4bit
 from peft.tuners.lora import Linear4bit as Peft_Linear4bit
 from peft.tuners.lora import Linear as Peft_Linear
@@ -330,7 +331,7 @@ def unsloth_save_model(
             old_username = None, private = private,
         )
 
-        getattr(model, "original_push_to_hub", tokenizer.push_to_hub)\
+        getattr(model, "original_push_to_hub", model.push_to_hub)\
         (
             repo_id            = save_directory,
             use_temp_dir       = use_temp_dir,
@@ -549,7 +550,7 @@ def unsloth_save_model(
     from collections import OrderedDict
     state_dict = OrderedDict()
 
-    torch_dtype = internal_model.config.torch_dtype
+    torch_dtype = dtype_from_config(internal_model.config)
     if type(torch_dtype) is str:
         if   torch_dtype ==  "float16": torch_dtype = torch.float16
         elif torch_dtype == "bfloat16": torch_dtype = torch.bfloat16
@@ -1195,6 +1196,41 @@ def save_to_gguf(
             f"--outfile {final_location} --vocab-type {vocab_type} "\
             f"--outtype {first_conversion} --concurrency {n_cpus} --pad-vocab"
     else:
+        # Fix up conversion script is possible
+        with open(convert_location, "rb") as f: converter_latest = f.read()
+        # Fix metadata
+        converter_latest = re.sub(
+            rb"(self\.metadata \= .+?\(.+?\)"\
+            rb"[\n]{1,}([\s]{4,}))",
+            rb"\1"\
+            rb"if hasattr(self.metadata, 'quantized_by'): self.metadata.quantized_by = 'Unsloth'\n"\
+            rb"\2if hasattr(self.metadata, 'repo_url'): self.metadata.repo_url = 'https://huggingface.co/unsloth'\n"\
+            rb"\2if hasattr(self.metadata, 'tags'): self.metadata.tags = ['unsloth', 'llama.cpp']\n"\
+            rb"\2",
+            converter_latest,
+        )
+
+        # Make mistral_common optional for now
+        # from x import y
+        converter_latest = re.sub(
+            rb"(from mistral_common[^\n\(]{1,})[\s]{0,}\n",
+            rb"try:\n    \1\nexcept:\n    pass\n",
+            converter_latest,
+        )
+        # from x import (y, z,)
+        converter_latest = re.sub(
+            rb"(from mistral_common[^\n\(]{1,}[\s]{0,}\(.+?\))",
+            rb"try:\n    \1\nexcept:\n    pass\n",
+            converter_latest,
+            flags = re.MULTILINE | re.DOTALL,
+        )
+
+        try:
+            # Write file
+            with open(convert_location, "wb") as file:
+                file.write(converter_latest)
+        except:
+            pass
         command = f"python {convert_location} {model_directory} "\
             f"--outfile {final_location} "\
             f"--outtype {first_conversion}"
@@ -1530,7 +1566,7 @@ def upload_to_huggingface(
         # We also upload a config.json file
         if create_config:
             import json
-            with open("_temporary_unsloth_config.json", "w") as file:
+            with open("_temporary_unsloth_config.json", "w", encoding = "utf-8") as file:
                 json.dump({"model_type" : model.config.model_type}, file, indent = 4)
             pass
             hf_api.upload_file(
@@ -1694,7 +1730,7 @@ def push_to_ollama_hub(username: str, model_name: str, tag: str):
         print(f"\nMODEL PUBLISHED FAILED WITH RETURN CODE {return_code}")
     else:
         print("\nMODEL PUBLISHED SUCCESSFULLY")
-
+pass
 
 def push_to_ollama(
     tokenizer,
@@ -1708,7 +1744,7 @@ def push_to_ollama(
         gguf_location=gguf_location
     )
 
-    with open(f"Modelfile_{model_name}", "w") as f:
+    with open(f"Modelfile_{model_name}", "w", encoding = "utf-8") as f:
         f.write(model_file)
         f.close()
 
@@ -1726,9 +1762,7 @@ def push_to_ollama(
     )
 
     print("Successfully pushed to ollama")
-
-
-
+pass
 
 
 def unsloth_save_pretrained_gguf(
@@ -1847,7 +1881,7 @@ def unsloth_save_pretrained_gguf(
     for _ in range(3):
         gc.collect()
 
-    model_dtype = self.config.torch_dtype
+    model_dtype = dtype_from_config(self.config)
     model_type  = self.config.model_type
     if type(model_dtype) is str:
         assert(model_dtype == "float16" or model_dtype == "bfloat16")
@@ -1872,7 +1906,7 @@ def unsloth_save_pretrained_gguf(
     modelfile_location = None
     if modelfile is not None:
         modelfile_location = os.path.join(new_save_directory, "Modelfile")
-        with open(modelfile_location, "w") as file:
+        with open(modelfile_location, "w", encoding = "utf-8") as file:
             file.write(modelfile)
         pass
         print(f"Unsloth: Saved Ollama Modelfile to {modelfile_location}")
@@ -2025,7 +2059,7 @@ def unsloth_push_to_hub_gguf(
     for _ in range(3):
         gc.collect()
 
-    model_dtype = self.config.torch_dtype
+    model_dtype = dtype_from_config(self.config)
     model_type  = self.config.model_type
     if type(model_dtype) is str:
         assert(model_dtype == "float16" or model_dtype == "bfloat16")
@@ -2050,7 +2084,7 @@ def unsloth_push_to_hub_gguf(
     modelfile_location = None
     if modelfile is not None:
         modelfile_location = os.path.join(new_save_directory, "Modelfile")
-        with open(modelfile_location, "w") as file:
+        with open(modelfile_location, "w", encoding = "utf-8") as file:
             file.write(modelfile)
         pass
         print(f"Unsloth: Saved Ollama Modelfile to {modelfile_location}")
@@ -2086,6 +2120,59 @@ def unsloth_push_to_hub_gguf(
             "Unsloth: ##### The current model auto adds a BOS token.\n"\
             "Unsloth: ##### We removed it in GGUF's chat template for you."
         )
+    pass
+pass
+
+def unsloth_save_pretrained_torchao(
+    self,
+    save_directory       : Union[str, os.PathLike],
+    tokenizer            = None,
+    torchao_config       = None,
+    push_to_hub          : bool = False,
+):
+    """Quantizes the model with torchao and saves a torchao quantized checkpoint
+
+    Args
+      `save_directory`: local folder path or huggingface hub ID when `push_to_hub` is set to True, e.g. `my_model`
+      `torchao_config` (TorchAOBaseConfig): configuration for torchao quantization, full list: https://docs.pytorch.org/ao/main/api_ref_quantization.html#inference-apis-for-quantize
+      `push_to_hub` (bool): whether to push the checkpoint to huggingface hub or not
+    """
+    # first merge the lora weights
+    arguments = dict(locals())
+    arguments["save_directory"] = save_directory + "-local"
+    arguments["model"]        = self
+    arguments["tokenizer"]    = tokenizer
+    arguments["push_to_hub"]  = False # We save ourselves
+    arguments["save_method"] = "merged_16bit" # Must be 16bit
+    del arguments["self"]
+    del arguments["torchao_config"]
+    new_save_directory, old_username = unsloth_save_model(**arguments)
+
+    from transformers import AutoModelForCausalLM, AutoTokenizer, TorchAoConfig
+    from torchao import quantize_
+    if torchao_config is None:
+        from torchao.quantization import Int8DynamicActivationInt8WeightConfig
+        torchao_config = Int8DynamicActivationInt8WeightConfig()
+    quantization_config = TorchAoConfig(quant_type=torchao_config)
+
+    tokenizer = AutoTokenizer.from_pretrained(new_save_directory)
+    if HAS_TORCH_DTYPE:
+        kwargs = {"torch_dtype" : "auto"}
+    else:
+        kwargs = {"dtype" : "auto"}
+    model = AutoModelForCausalLM.from_pretrained(
+        new_save_directory,
+        device_map="auto",
+        quantization_config=quantization_config,
+        **kwargs,
+    )
+
+    if push_to_hub:
+        save_to = save_directory
+        # torchao does not support safe_serialization right now
+        model.push_to_hub(save_to, safe_serialization=False)
+        tokenizer.push_to_hub(save_to)
+        pass
     pass
 pass
 
@@ -2240,6 +2327,7 @@ from unsloth_zoo.llama_cpp import (
 def save_to_gguf_generic(
     model,
     save_directory,
+    tokenizer,
     quantization_method = None,
     quantization_type = "Q8_0",
     repo_id = None,
@@ -2563,6 +2651,7 @@ def patch_saving_functions(model, vision = False):
             model.save_pretrained_merged = types.MethodType(unsloth_generic_save_pretrained_merged,                model)
             model.push_to_hub_gguf       = types.MethodType(unsloth_push_to_hub_gguf,                      model)
             model.save_pretrained_gguf   = types.MethodType(unsloth_save_pretrained_gguf,                  model)
+            model.save_pretrained_torchao   = types.MethodType(unsloth_save_pretrained_torchao,                  model)
             model.push_to_hub_ggml       = types.MethodType(unsloth_convert_lora_to_ggml_and_push_to_hub,  model)
             model.save_pretrained_ggml   = types.MethodType(unsloth_convert_lora_to_ggml_and_save_locally, model)
         pass

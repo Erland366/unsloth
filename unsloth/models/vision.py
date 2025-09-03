@@ -43,6 +43,7 @@ from transformers.models.llama.modeling_llama import logger
 from transformers import __version__ as transformers_version
 from triton import __version__ as triton_version
 from unsloth_zoo.utils import _get_dtype
+from unsloth_zoo.hf_utils import dtype_from_config, add_dtype_kwargs
 from unsloth_zoo.patching_utils import patch_model_and_tokenizer
 from unsloth_zoo.training_utils import prepare_model_for_training
 import types
@@ -73,6 +74,7 @@ global PROMPT_LOOPKUP
 PROMPT_LOOPKUP = dict()
 
 from transformers import GenerationConfig, CompileConfig, HybridCache
+
 _compile_config = CompileConfig(
     fullgraph = False,
     dynamic = None,
@@ -118,7 +120,7 @@ def unsloth_base_fast_generate(
     bsz = input_ids.shape[0]
 
     FastBaseModel.for_inference(self)
-    dtype = _get_dtype(self.config.torch_dtype)
+    dtype = _get_dtype(dtype_from_config(self.config))
 
     # Check if VLM
     is_vlm = any(
@@ -213,7 +215,8 @@ def unsloth_base_fast_generate(
         cache_implementation = None
     if cache_implementation is not None:
         swa = getattr(getattr(self.config, "text_config", self.config), "sliding_window", None)
-        if swa == 0 or type(swa) is not int:
+        if (swa == 0 or type(swa) is not int) \
+            and (getattr(self, "_can_compile_fullgraph", True) is True):
             cache_implementation = "static"
         else:
             cache_implementation = "hybrid"
@@ -244,7 +247,6 @@ def unsloth_base_fast_generate(
     FastBaseModel.for_training(self)
     return output
 pass
-
 
 class FastBaseModel:
 
@@ -358,12 +360,13 @@ class FastBaseModel:
             custom_datatype = os.environ["UNSLOTH_FORCE_CUSTOM_DTYPE"]
             assert custom_datatype.count(";") >= 4
             checker, _dtype, _bnb_compute_dtype, _custom_datatype, execute_code = custom_datatype.split(";", 4)
-
             # Allow custom dtypes on all runs
             allow_all_runs = (checker == "all")
             # Allow only on float16 datatypes
-            allow_float16_runs = (checker == "float16" and dtype == torch.float16)
-
+            allow_float16_runs = (
+                (checker == "float16" or checker == "torch.float16") and \
+                (dtype == torch.float16 or os.environ.get("UNSLOTH_FORCE_FLOAT32", "0") == "1")
+            )
             if allow_all_runs or allow_float16_runs:
                 if eval(_dtype) is not None:
                     dtype = eval(_dtype)
@@ -383,7 +386,7 @@ class FastBaseModel:
         if not ("attn_implementation" in kwargs):
             kwargs["attn_implementation"] = "sdpa"
         if not supports_sdpa:
-            print(f"Unsloth: {model_type_arch.title()} does not support SDPA - switching to eager!")
+            print(f"Unsloth: {model_type_arch.title()} does not support SDPA - switching to fast eager.")
             del kwargs["attn_implementation"]
         pass
 
@@ -429,17 +432,25 @@ class FastBaseModel:
             bnb_config.get_loading_attributes = lambda *args, **kwargs: {}
 
         # Cannot be None, since HF now checks for the config
-        if load_in_4bit: kwargs["quantization_config"] = bnb_config
+        if load_in_4bit:
+            # Ignore load_in_4bit / load_in_8bit for MXFP4 - best to get config file
+            if "gpt-oss" in model_name.lower():
+                pass
+            else:
+                kwargs["quantization_config"] = bnb_config
+        pass
 
         # Check if using forced float32 - we load it in bfloat16, then cast to float16!
         torch_dtype = dtype
         if do_forced_float32: torch_dtype = torch.bfloat16
 
+        kwargs = add_dtype_kwargs(torch_dtype, kwargs)
+
         raise_handler = RaiseUninitialized()
         model = auto_model.from_pretrained(
             model_name,
             device_map              = device_map,
-            torch_dtype             = torch_dtype,
+            # torch_dtype           = torch_dtype, # Transformers removed torch_dtype
             # quantization_config   = bnb_config,
             token                   = token,
             trust_remote_code       = trust_remote_code,
@@ -450,10 +461,18 @@ class FastBaseModel:
         # Return old flag
         os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = old_hf_transfer
 
+        # Check float32 norm weights
+        if os.environ.get("UNSLOTH_HIGH_PRECISION_LAYERNORM", "0") == "1":
+            for jj, (name, module) in enumerate(model.named_modules()):
+                if name.endswith("norm") and hasattr(module, "weight"):
+                    module._pre_set_compute_dtype = torch.float32
+        pass
         # Edit data-types
         if custom_datatype is not None:
-            for jj, (name, module) in enumerate(model.named_modules()):
-                exec(custom_datatype)
+            with torch.no_grad():
+                for jj, (name, module) in enumerate(model.named_modules()):
+                    exec(custom_datatype)
+                pass
             pass
         pass
         # Clear deleted GPU items
@@ -690,7 +709,7 @@ class FastBaseModel:
         full_finetuning = os.environ.get("UNSLOTH_ENABLE_FULL_FINETUNING", "0") == "1"
 
         float32_mixed_precision = True
-        if _get_dtype(model.config.torch_dtype) == torch.bfloat16 and full_finetuning:
+        if _get_dtype(dtype_from_config(model.config)) == torch.bfloat16 and full_finetuning:
             # Use bfloat16 precision for full finetuning
             float32_mixed_precision = False
 

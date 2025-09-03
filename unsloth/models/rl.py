@@ -134,15 +134,18 @@ class Unsloth{RLConfig_name}({RLConfig_name}):
         default = -1,
         metadata = {{'help': 'Chunk size to reduce memory usage. -1 is most efficient.'}},
     )
+    {max_seq_length_pre}
     def __init__({RLConfig_arguments},
         vllm_sampling_params = None,
         unsloth_num_chunks = -1,
+        {max_seq_length_call}
         **kwargs,
     ):
 {RLConfig_extra_args}
         super().__init__({RLConfig_call_args}{RLConfig_kwargs})
         self.vllm_sampling_params = vllm_sampling_params
         self.unsloth_num_chunks = unsloth_num_chunks
+        {max_seq_length_post}
 pass
 
 {RLTrainer_extras}
@@ -232,7 +235,7 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         )
     pass
 
-    # Edit bf16, fp16 by checking model's torch_dtype directly
+    # Edit bf16, fp16 by checking model's dtype/torch_dtype directly
     extra_args = ""
     if "args" in call_args and "model" in call_args:
         mixed_precision = \
@@ -245,7 +248,7 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         "    print('Unsloth: Switching to float32 training since model cannot work with float16')\n"\
         "    force_float32 = True\n"\
         "mixed_precision_dtype = os.environ.get('UNSLOTH_MIXED_PRECISION', 'float32')\n"\
-        "dtype = getattr(model.config, 'torch_dtype', None)\n"\
+        "dtype = getattr(model.config, 'dtype', None) or getattr(model.config, 'torch_dtype', None)\n"\
         "if dtype is None: dtype = model.get_input_embeddings().dtype\n"\
         "from unsloth_zoo.utils import _get_dtype\n"\
         "dtype = _get_dtype(dtype)\n"\
@@ -354,9 +357,7 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
             "            max_length = args.max_length\n"\
             "    else:\n"\
             "        model_max_length = getattr(model, 'max_seq_length', None)\n"\
-            "        # print(model_max_length, 'mml1')\n"\
             "        if model_max_length is None: model_max_length = getattr(model, 'max_length', None)\n"\
-            "        # print(model_max_length, 'mml2')\n"\
             "        if model_max_length is not None:\n"\
             "            args.max_length = model_max_length\n"\
             "            max_length = args.max_length\n"\
@@ -390,9 +391,17 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         "from unsloth_zoo.vision_utils import UnslothVisionDataCollator\n"\
         "if not isinstance(data_collator, UnslothVisionDataCollator):\n"\
         "    if isinstance(data_collator, DataCollatorForSeq2Seq) and 'labels' not in train_dataset.column_names:\n"\
-        "        data_collator = TransformersDataCollatorForLanguageModeling(__tokenizer, mlm = False, mlm_probability = 0.0)\n"\
+        "        data_collator = TransformersDataCollatorForLanguageModeling(\n"\
+        "            __tokenizer,\n"\
+        "            mlm = False,\n"\
+        "            mlm_probability = 0.0,\n"\
+        "            pad_to_multiple_of = getattr(args, 'pad_to_multiple_of', None),\n"\
+        "        )\n"\
         "    elif isinstance(data_collator, TransformersDataCollatorForLanguageModeling) and 'labels' in train_dataset.column_names:\n"\
-        "        data_collator = DataCollatorForSeq2Seq(__tokenizer)\n"\
+        "        data_collator = DataCollatorForSeq2Seq(\n"\
+        "            __tokenizer,\n"\
+        "            pad_to_multiple_of = getattr(args, 'pad_to_multiple_of', None),\n"\
+        "        )\n"\
         "else:\n"\
         "    if hasattr(args, 'remove_unused_columns'): args.remove_unused_columns = False\n"\
         "    if hasattr(args, 'dataset_text_field'): args.dataset_text_field = ''\n"\
@@ -404,9 +413,17 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         "if not isinstance(data_collator, UnslothVisionDataCollator):\n"\
         "    if not hasattr(__tokenizer, 'pad') and hasattr(__tokenizer, 'tokenizer'):\n"\
         "        if isinstance(data_collator, DataCollatorForSeq2Seq):\n"\
-        "            data_collator = DataCollatorForSeq2Seq(__tokenizer.tokenizer)\n"\
+        "            data_collator = DataCollatorForSeq2Seq(\n"\
+        "                __tokenizer.tokenizer,\n"\
+        "                pad_to_multiple_of = getattr(args, 'pad_to_multiple_of', None),\n"\
+        "            )\n"\
         "        else:\n"\
-        "            data_collator = TransformersDataCollatorForLanguageModeling(__tokenizer.tokenizer, mlm = False, mlm_probability = 0.0)\n"
+        "            data_collator = TransformersDataCollatorForLanguageModeling(\n"\
+        "                __tokenizer.tokenizer,\n"\
+        "                mlm = False,\n"\
+        "                mlm_probability = 0.0,\n"\
+        "                pad_to_multiple_of = getattr(args, 'pad_to_multiple_of', None),\n"\
+        "            )\n"
         extra_args += pad_check
     pass
 
@@ -418,6 +435,20 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         "    if hasattr(self, 'neftune_hook_handle'): del self.neftune_hook_handle\n"\
         "if getattr(args, 'neftune_noise_alpha', None) is not None:\n"\
         "    model.get_input_embeddings().neftune_noise_alpha = self.neftune_noise_alpha\n"\
+        "pass\n"
+        RLTrainer_post += neftune_check
+    pass
+
+    # Add accelerator scaler to model
+    if "model" in call_args:
+        neftune_check = \
+        "if hasattr(self, 'accelerator'):\n"\
+        "    scaler = self.accelerator.scaler\n"\
+        "    current_model = model\n"\
+        "    while hasattr(current_model, 'model'):\n"\
+        "        current_model.accelerator_scaler = scaler\n"\
+        "        current_model = current_model.model\n"\
+        "    current_model.accelerator_scaler = scaler\n"\
         "pass\n"
         RLTrainer_post += neftune_check
     pass
@@ -474,6 +505,8 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         "logging_steps"                 : 1,
         "max_seq_length"                : None,
         "num_generations"               : 8,
+        # "steps_per_generation"          : 1, # Otherwise defaults to ga_steps which is wrong
+        # "generation_batch_size"         : None, # Useless. If steps_per_generation set, generation_batch_size clashes
         "top_k"                         : None,
         "vllm_mode"                     : "colocate",
         "generation_kwargs"             : {},
@@ -552,6 +585,21 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         extra_args += learning_rate_check
     pass
 
+    # Check if max_seq_length is NOT defined (max_length is now default)
+    if "max_seq_length" not in call_args and "max_length" in call_args:
+        max_seq_length_pre = \
+            """max_seq_length : Optional[int] = field(
+        default = None,
+        metadata = {'help': 'Maximum sequence length to truncate to.'},
+    )"""
+        max_seq_length_call = "max_seq_length = None,"
+        max_seq_length_post = "self.max_seq_length = max_seq_length"
+    else:
+        max_seq_length_pre = ""
+        max_seq_length_call = ""
+        max_seq_length_post = ""
+    pass
+
     # Add output_dir saving
     if "output_dir" in call_args:
         # Default checks
@@ -567,8 +615,20 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         num_proc_check = \
         "if dataset_num_proc is None:\n"\
         "    from multiprocessing import cpu_count\n"\
-        "    dataset_num_proc = min(cpu_count()*2, 2)\n"
+        "    dataset_num_proc = max(cpu_count()+4, 2)\n"
         extra_args += num_proc_check
+    pass
+
+    # Add padding if flex attention is added
+    if "pad_to_multiple_of" in call_args:
+        pad_to_multiple_of = \
+        "if os.environ.get('UNSLOTH_ENABLE_FLEX_ATTENTION', '0') == '1':\n"\
+        "    from unsloth_zoo.flex_attention import HAS_FLEX_ATTENTION\n"\
+        "    if HAS_FLEX_ATTENTION and pad_to_multiple_of is None:\n"\
+        "        from unsloth_zoo.flex_attention import FLEX_ATTENTION_BLOCK_SIZE\n"\
+        "        pad_to_multiple_of = FLEX_ATTENTION_BLOCK_SIZE\n"\
+        "\n"
+        extra_args += pad_to_multiple_of
     pass
 
     # Check for loss_type = dr_grpo and scale_rewards for GRPO
@@ -682,6 +742,10 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         RLTrainer_extras     = RLTrainer_extras,
         RLTrainer_post       = RLTrainer_post,
         RL_pre               = RL_pre,
+
+        max_seq_length_pre   = max_seq_length_pre,
+        max_seq_length_call  = max_seq_length_call,
+        max_seq_length_post  = max_seq_length_post,
 
         selective_log_softmax_code = selective_log_softmax_code,
     )
