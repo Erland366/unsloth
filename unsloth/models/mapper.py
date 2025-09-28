@@ -812,6 +812,11 @@ __INT_TO_FLOAT_MAPPER = \
         "microsoft/Phi-4-mini-reasoning",
         "unsloth/phi-4-mini-reasoning-bnb-4bit",
     ),
+    "unsloth/Phi-4-mini-instruct-unsloth-bnb-4bit" : (
+        "unsloth/Phi-4-mini-instruct",
+        "microsoft/Phi-4-mini-instruct",
+        "unsloth/Phi-4-mini-instruct-bnb-4bit",
+    ),
     "unsloth/orpheus-3b-0.1-pretrained-unsloth-bnb-4bit" : (
         "unsloth/orpheus-3b-0.1-pretrained",
         "canopylabs/orpheus-3b-0.1-pretrained",
@@ -950,6 +955,16 @@ __INT_TO_FLOAT_MAPPER = \
         "unsloth/gemma-3-270m",
         "google/gemma-3-270m",
         "unsloth/gemma-3-270m-bnb-4bit",
+    ),
+    "unsloth/Magistral-Small-2507-unsloth-bnb-4bit" : (
+        "unsloth/Magistral-Small-2507",
+        "mistralai/Magistral-Small-2507",
+        "unsloth/Magistral-Small-2507-bnb-4bit",
+    ),
+    "unsloth/Magistral-Small-2509-unsloth-bnb-4bit" : (
+        "unsloth/Magistral-Small-2509",
+        "mistralai/Magistral-Small-2509",
+        "unsloth/Magistral-Small-2509-bnb-4bit",
     ),
 }
 

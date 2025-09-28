@@ -32,7 +32,6 @@ from .rl_replacements import (
     RL_CONFIG_CHANGES,
     RL_METRICS_CHANGES,
 )
-selective_log_softmax = RL_REPLACEMENTS["selective_log_softmax"]
 
 torch_compile_options = {
     "epilogue_fusion"   : True,
@@ -44,6 +43,8 @@ torch_compile_options = {
 
 from trl import __version__ as trl_version
 from ._utils import is_accelerate_initialized, get_repetitive_layer_name
+from unsloth_zoo.utils import Version
+trl_version = Version(trl_version)
 
 def vLLMSamplingParams(**kwargs):
     from vllm import SamplingParams
@@ -98,6 +99,11 @@ def PatchRL(FastLanguageModel):
 pass
 
 
+selective_log_softmax            = RL_REPLACEMENTS["selective_log_softmax"]
+calculate_pad_tokens_in_prompt   = RL_REPLACEMENTS["calculate_pad_tokens_in_prompt"]
+create_completion_attention_mask = RL_REPLACEMENTS["create_completion_attention_mask"]
+left_pack_padding                = RL_REPLACEMENTS["left_pack_padding"]
+
 RLTrainer_replacement = '''
 import os
 from typing import *
@@ -109,6 +115,24 @@ from contextlib import nullcontext
 from torch.nn import functional as F
 from transformers import DataCollatorForSeq2Seq, DataCollatorForLanguageModeling as TransformersDataCollatorForLanguageModeling
 from torch.distributed.fsdp import MixedPrecisionPolicy
+from transformers.training_args import ParallelMode
+
+# Wrap trainer with padding to right and enable training mode
+import functools
+from types import MethodType
+def prepare_for_training_mode(f):
+    @functools.wraps(f)
+    def wrapper(self, *args, **kwargs):
+        # Enable training mode
+        if hasattr(self, 'model') and hasattr(self.model, "for_training"):
+            self.model.for_training()
+        output = f(self, *args, **kwargs)
+        # Return inference mode
+        if hasattr(self, 'model') and hasattr(self.model, "for_inference"):
+            self.model.for_inference()
+        return output
+    return wrapper
+pass
 
 torch_compile_options = {{
     "epilogue_fusion"   : True,
@@ -119,6 +143,10 @@ torch_compile_options = {{
 }}
 
 {selective_log_softmax_code}
+{calculate_pad_tokens_in_prompt_code}
+{create_completion_attention_mask_code}
+{left_pack_padding_code}
+
 {RL_pre}
 
 @dataclass
@@ -159,7 +187,16 @@ class Unsloth{RLTrainer_name}(_Unsloth{RLTrainer_name}):
     ):
         if args is None: args = Unsloth{RLConfig_name}()
 {RLTrainer_extra_args}
+        # [TODO] Fix up DataParallel multiplying batch sizes
+        # [TODO] DDP works, but DP seems to not work? [TODO]
+        if getattr(args, "parallel_mode", None) == ParallelMode.NOT_DISTRIBUTED and args.n_gpu > 1:
+            if getattr(args, "_n_gpu", 1) != 1:
+                args._n_gpu = 1
+        if "model" in locals() and hasattr(model, "for_training"):
+            model.for_training()
         super().__init__({RLTrainer_call_args}{RLTrainer_kwargs})
+        if "model" in locals() and hasattr(model, "for_inference"):
+            model.for_inference()
 {RLTrainer_post}
 pass
 '''
@@ -244,7 +281,8 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         "use_fp16 = getattr(args, 'fp16', False)\n"\
         "if type(use_fp16) is not bool: use_fp16 = False\n"\
         "force_float32 = False\n"\
-        "if os.environ.get('UNSLOTH_FORCE_FLOAT32', '0') == '1':\n"\
+        "full_finetuning = os.environ.get('UNSLOTH_ENABLE_FULL_FINETUNING', '0') == '1'\n"\
+        "if not full_finetuning and (os.environ.get('UNSLOTH_FORCE_FLOAT32', '0') == '1'):\n"\
         "    print('Unsloth: Switching to float32 training since model cannot work with float16')\n"\
         "    force_float32 = True\n"\
         "mixed_precision_dtype = os.environ.get('UNSLOTH_MIXED_PRECISION', 'float32')\n"\
@@ -256,14 +294,17 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         "if not force_float32 and (float16 and use_bf16): raise TypeError('Unsloth: Model is in float16 precision but you want to use bfloat16 precision. Set fp16 to `True` and bf16 to `False`')\n"\
         "if not force_float32 and (not float16 and use_fp16): raise TypeError('Unsloth: Model is in bfloat16 precision but you want to use float16 precision. Set fp16 to `False` and bf16 to `True`')\n"\
         "if force_float32:\n"\
+        "    # Forced float32 training\n"\
         "    args.fp16 = False\n"\
         "    args.bf16 = False\n"\
         "    os.environ['ACCELERATE_MIXED_PRECISION'] = 'no'\n"\
         "elif (not use_bf16 and not use_fp16) and mixed_precision_dtype == 'float32':\n"\
+        "    # Mixed precision training\n"\
         "    args.fp16 = float16\n"\
         "    args.bf16 = not float16\n"\
         "    os.environ['ACCELERATE_MIXED_PRECISION'] = 'fp16' if float16 else 'bf16'\n"
         "elif mixed_precision_dtype == 'bfloat16':\n"\
+        "    # Both False since bfloat16 full finetuning doesn't do any autocasting.\n"\
         "    args.fp16 = False\n"\
         "    args.bf16 = False\n"\
         "    os.environ['ACCELERATE_MIXED_PRECISION'] = 'no'\n"
@@ -441,7 +482,7 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
 
     # Add accelerator scaler to model
     if "model" in call_args:
-        neftune_check = \
+        accelerator_check = \
         "if hasattr(self, 'accelerator'):\n"\
         "    scaler = self.accelerator.scaler\n"\
         "    current_model = model\n"\
@@ -450,7 +491,16 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         "        current_model = current_model.model\n"\
         "    current_model.accelerator_scaler = scaler\n"\
         "pass\n"
-        RLTrainer_post += neftune_check
+        RLTrainer_post += accelerator_check
+    pass
+
+    # Add enabling and disabling training modes
+    if "model" in call_args:
+        training_check = \
+        "if hasattr(self, 'train'):\n"\
+        "    self.train = MethodType(prepare_for_training_mode(self.__class__.train), self)\n"\
+        "pass\n"
+        RLTrainer_post += training_check
     pass
 
     # Edit optional metrics
@@ -514,7 +564,7 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         "fp16"                          : False,
         "include_tokens_per_second"     : False,
         "include_num_input_tokens_seen" : False,
-        "auto_find_batch_size"          : True, # Auto /2 batch size
+        "auto_find_batch_size"          : False, # Auto /2 batch size - too many people complained so removing
         "dataloader_pin_memory"         : True,
         # Might fail so disable for now
         # "dataloader_persistent_workers" : True, # Keeps dataloader in RAM
@@ -565,7 +615,12 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
     # https://verl.readthedocs.io/en/latest/examples/config.html
     if trainer_file == "grpo_trainer":
         replacements = {
-            "beta" : 0.001,
+            "loss_type" : "bnpo",           # Default GRPO paper
+            "beta" : 0.001,                 # Recommended as seen in verl
+            "auto_find_batch_size" : False, # Cannot work on GRPO
+            # [TODO] See https://fengyao.notion.site/off-policy-rl
+            # https://github.com/huggingface/trl/pull/3867 (August 7th)
+            "vllm_importance_sampling_correction" : False,
         }
         for k, v in replacements.items():
             x = f"{k}( = [^,\n]{{1,}})?,\n"
@@ -576,11 +631,11 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
     pass
 
     # Warn on too large or too small learning rate
-    if " learning_rate" in call_args:
+    if "learning_rate" in call_args:
         learning_rate_check = \
-        "if learning_rate < 1e-7: raise FloatingPointError(f'Unsloth: Your learning rate of `{learning_rate}` is too small and less than 1e-7! "\
+        "if learning_rate < 1e-7: print(f'Unsloth: Your learning rate of `{learning_rate}` is too small and less than 1e-7! "\
         "Consider increasing it, otherwise gradient updates will be close to 0!')\n"\
-        "if learning_rate > 1: raise OverflowError(f'Unsloth: Your learning rate of `{learning_rate}` is way too larger > 1! "\
+        "if learning_rate > 1: print(f'Unsloth: Your learning rate of `{learning_rate}` is way too larger > 1! "\
         "Consider decreasing it to 1e-1, otherwise gradient updates will explode!')\n"
         extra_args += learning_rate_check
     pass
@@ -647,9 +702,12 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         "        print('Unsloth: The Dr GRPO paper recommends setting `scale_rewards` to False! Will override. Set it to `None` to force False.')\n"\
         "        scale_rewards = False\n"\
         "elif loss_type.lower() == 'dapo':\n"\
-        "    print('Unsloth: The DAPO paper recommends `mask_truncated_completions = True`')\n"\
-        "    print('Unsloth: The DAPO paper recommends `epsilon_high = 0.28`')\n"\
-        "    print('Unsloth: The DAPO paper recommends setting `beta = 0.0` to remove the KL term')\n"\
+        "    if mask_truncated_completions != True:\n"\
+        "        print('Unsloth: The DAPO paper recommends `mask_truncated_completions = True`')\n"\
+        "    if epsilon_high != 0.28:\n"\
+        "        print('Unsloth: The DAPO paper recommends `epsilon_high = 0.28`')\n"\
+        "    if beta != 0.0:\n"\
+        "        print('Unsloth: The DAPO paper recommends setting `beta = 0.0` to remove the KL term')\n"\
         "    mask_truncated_completions = True\n"\
         "    epsilon_high = 0.28\n"\
         "    beta = 0.0\n"\
@@ -720,8 +778,11 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         RL_pre = RL_pre + "\n" + inspect.getsource(vLLMSamplingParams)
     pass
 
-    # Selective log softmax
+    # Selective log softmax and other functions
     selective_log_softmax_code = inspect.getsource(selective_log_softmax)
+    calculate_pad_tokens_in_prompt_code = inspect.getsource(calculate_pad_tokens_in_prompt)
+    create_completion_attention_mask_code = inspect.getsource(create_completion_attention_mask)
+    left_pack_padding_code = inspect.getsource(left_pack_padding)
 
     # Get final source code
     RLTrainer_source = RLTrainer_replacement.format(
@@ -747,13 +808,23 @@ def _patch_trl_rl_trainers(trainer_file = "grpo_trainer"):
         max_seq_length_call  = max_seq_length_call,
         max_seq_length_post  = max_seq_length_post,
 
-        selective_log_softmax_code = selective_log_softmax_code,
+        selective_log_softmax_code            = selective_log_softmax_code,
+        calculate_pad_tokens_in_prompt_code   = calculate_pad_tokens_in_prompt_code,
+        create_completion_attention_mask_code = create_completion_attention_mask_code,
+        left_pack_padding_code                = left_pack_padding_code,
     )
 
     if RLTrainer_name == "SFTTrainer":
         original_text = 'self._signature_columns = ["input_ids", "attention_mask", "completion_mask"]'
         new_text = 'self._signature_columns = ["input_ids", "attention_mask", "completion_mask","labels"]'
         RLTrainer_source = RLTrainer_source.replace(original_text, new_text)
+
+        # Temporary patch _is_vlm to False
+        # as of 0.22 it only exists in sfttrainer
+        oriignal_is_vlm_text = 'self._is_vlm = True'
+        new_is_vlm_text = 'self._is_vlm = False'
+        RLTrainer_source = RLTrainer_source.replace(oriignal_is_vlm_text, new_is_vlm_text)
+
 
     # Remove multiple doc strings
     if __RLConfig_doc__ != "" and RLTrainer_source.count(__RLTrainer_doc__) == 2:
@@ -825,7 +896,7 @@ def patch_functions(RLTrainer, trainer_file, RLTrainer_name, all_imports, import
             " " * 12 + "if (getattr(args, 'use_vllm', False) == False):\n" + \
             " " * 16 + "args.use_vllm = True\n"
 
-            if "grpo" in trainer_file and trl_version >= "0.18":
+            if "grpo" in trainer_file and trl_version >= Version("0.18.0"):
                 # If model has vllm_engine, then use vllm in colocate mode. Donot wait for server
                 vllm_setter += \
                 " " * 12 + "args.vllm_mode='colocate'\n"
@@ -871,26 +942,27 @@ def patch_functions(RLTrainer, trainer_file, RLTrainer_name, all_imports, import
                 sampling_params # Add spaces
 
             # count the indentation of last line of sampling_params.
-            last_line = sampling_params.split("\n")[-1]
-            last_prev_line = sampling_params.split("\n")[-2]
-            last_prev_indentation = len(last_prev_line) - len(last_prev_line.lstrip())
-            last_indentation = len(last_line) - len(last_line.lstrip())
+            splitted_sampling_params = sampling_params.split("\n")
+            if len(splitted_sampling_params) >= 2:
+                last_line = splitted_sampling_params[-1]
+                last_prev_line = splitted_sampling_params[-2]
+                last_prev_indentation = len(last_prev_line) - len(last_prev_line.lstrip())
+                last_indentation = len(last_line) - len(last_line.lstrip())
 
+                # Add extra arguments to SamplingParams
+                extra = "**getattr(getattr(args, 'vllm_sampling_params', vLLMSamplingParams()), '_set_kwargs', {})"
+                # Backwards replace
+                to_replace = ",\n" + " "*last_prev_indentation + extra + ",\n" + " "*last_indentation + ")"
+                sampling_params = to_replace.join(sampling_params.rsplit(")", 1))
+                # Strip multiple commas
+                sampling_params = re.sub(r"[\,][\s]{0,}\,", ",", sampling_params)
 
-            # Add extra arguments to SamplingParams
-            extra = "**getattr(getattr(args, 'vllm_sampling_params', vLLMSamplingParams()), '_set_kwargs', {})"
-            # Backwards replace
-            to_replace = ",\n" + " "*last_prev_indentation + extra + ",\n" + " "*last_indentation + ")"
-            sampling_params = to_replace.join(sampling_params.rsplit(")", 1))
-            # Strip multiple commas
-            sampling_params = re.sub(r"[\,][\s]{0,}\,", ",", sampling_params)
-
-            new_vllm_part = \
-                f"\n{' '*8}if {args}.use_vllm:\n{sampling_params}"\
-                f"\n{' '*8}else:\n"
+                new_vllm_part = \
+                    f"\n{' '*8}if {args}.use_vllm:\n{sampling_params}"\
+                    f"\n{' '*8}else:\n"
         pass
 
-        if trl_version >= "0.18":
+        if trl_version >= Version("0.18.0"):
             # Replace LLM init with already existing vLLM engine for colocate mode
             vllm_llm_init_pattern = r"self\.llm\s*=\s*LLM\(.*?\)*\)\s*?\n(?!,)"
             vllm_llm_replacement = "self.llm = model.vllm_engine\n"
@@ -902,7 +974,6 @@ def patch_functions(RLTrainer, trainer_file, RLTrainer_name, all_imports, import
             )
 
         init = init.replace(vllm_part, new_vllm_part)
-
     pass
 
     # Search for vLLM calling in all child functions
@@ -924,6 +995,19 @@ def patch_functions(RLTrainer, trainer_file, RLTrainer_name, all_imports, import
         for edit_function in edit_functions:
             source = edit_function(function, source)
         pass
+
+        """
+        import torch
+        X = torch.ones((2, 2048, 201088), dtype = torch.bfloat16, device = "cuda")
+        X[torch.randperm(2, dtype = torch.int64, device = X.device)]
+
+        will error out in torch 2.8 AcceleratorError: CUDA error: invalid configuration argument
+        """
+        source = re.sub(
+            r"(\n[\s]{4,})generation_batch = shuffle_sequence_dict\(generation_batch\)\n",
+            r"\n\1try: generation_batch = shuffle_sequence_dict(generation_batch)\n\1except: pass\n",
+            source,
+        )
 
         # llm_model = self.llm.llm_engine.model_executor.driver_worker.model_runner.model
         source = re.sub(
@@ -953,6 +1037,13 @@ def patch_functions(RLTrainer, trainer_file, RLTrainer_name, all_imports, import
             r"\1, lora_request = self.model.load_lora('" + lora_name + r"', load_tensors = True))",
             source
         )
+        # Prefer using unsloth's sampling params and fallback to trl's if not found
+        # We'll enable this later separately when combining both this and GRPOConfig params
+        # source = re.sub(
+        #     r"sampling_params\s*=\s*sampling_params",
+        #     r"sampling_params = getattr(self.args, 'vllm_sampling_params', sampling_params)",
+        #     source
+        # )
 
         # Skip if no changes done
         if source == original_source: continue
