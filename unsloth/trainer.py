@@ -236,6 +236,7 @@ def _patch_fsdp_trainer_fsdp_plugin():
     import re
     import inspect
     from transformers import Trainer
+    import torch.distributed
 
     old_create_accelerator_and_postprocess = inspect.getsource(Trainer.create_accelerator_and_postprocess)
     start = old_create_accelerator_and_postprocess.find("if self.is_fsdp_enabled:")
@@ -253,6 +254,10 @@ def _patch_fsdp_trainer_fsdp_plugin():
     spaces = re.search(r'\n([\s\t]{1,})', original_debug).group(0)[1:]
     front_spaces = re.match(r'([\s\t]{1,})', old_create_accelerator_and_postprocess).group(0)
     new_checking = """if self.is_fsdp_enabled:
+        # Ensure all processes are synchronized before FSDP setup
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
+
         fsdp_plugin = self.accelerator.state.fsdp_plugin
         for key, value in self.args.fsdp_config.items():
             if hasattr(fsdp_plugin, key):
@@ -261,8 +266,9 @@ def _patch_fsdp_trainer_fsdp_plugin():
         from unsloth.models._utils import get_repetitive_layer_name
         setattr(fsdp_plugin, "transformer_cls_names_to_wrap", get_repetitive_layer_name(str(self.model)))
 
-        # Force to use FSDP2
-        setattr(fsdp_plugin, "fsdp_version", 2)
+        # Only set FSDP version if not already configured
+        if not hasattr(fsdp_plugin, "fsdp_version") or fsdp_plugin.fsdp_version is None:
+            setattr(fsdp_plugin, "fsdp_version", 2)
         if fsdp_plugin.activation_checkpointing and self.args.gradient_checkpointing:
             raise ValueError(
                 "The 'activation_checkpointing' in FSDP config and the 'gradient_checkpointing' in training args "

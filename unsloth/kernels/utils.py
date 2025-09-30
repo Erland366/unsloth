@@ -225,9 +225,13 @@ def get_lora_parameters(proj):
     if lora_B_fake_quantizer is not None:
         B = lora_B_fake_quantizer(B)
 
+    quant_state = getattr(W, "quant_state", None)
+    if quant_state is None:
+        quant_state = getattr(base_layer, "quant_state", None)
+
     return (
         W,
-        getattr(W, "quant_state", None),
+        quant_state,
         A,
         B,
         proj.scaling[adapter],
