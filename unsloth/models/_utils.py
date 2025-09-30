@@ -69,7 +69,7 @@ __all__ = [
     "patch_fast_lora",
     "validate_loftq_config",
     "RaiseUninitialized",
-    "is_accelerate_initialized"
+    "is_accelerate_initialized",
     "fast_inference_setup",
     "patch_peft_fast_inference",
     "error_out_no_vllm",
@@ -1605,9 +1605,10 @@ def is_accelerate_initialized():
     import os
 
     # TODO: Is this correct?
-    return any(
-        x.startswith("ACCELERATE_") for x in os.environ.keys()
-    ) or torch.distributed.is_initialized()
+    # return any(
+    #     x.startswith("ACCELERATE_") for x in os.environ.keys()
+    # ) or torch.distributed.is_initialized()
+    return bool(os.environ.get("RANK", False))
 
 import re
 

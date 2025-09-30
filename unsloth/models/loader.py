@@ -78,7 +78,7 @@ from ._utils import (
     patch_compiled_autograd,
     process_vision_info,
     unsloth_compile_transformers,
-    is_accelerate_initialized
+    is_accelerate_initialized,
     fast_inference_setup,
 )
 

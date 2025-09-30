@@ -25,5 +25,5 @@ except:
     # transformers_version < 4.53.0 does not have falcon_h1 so silenty skip it for now
     pass
 from .dpo       import PatchDPOTrainer, PatchKTOTrainer
-from ._utils import is_bfloat16_supported, is_vLLM_available, __version__
+from ._utils import is_bfloat16_supported, is_vLLM_available, __version__, is_accelerate_initialized
 from .rl        import PatchFastRL, vLLMSamplingParams
