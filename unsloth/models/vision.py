@@ -584,9 +584,23 @@ class FastBaseModel:
         # Cannot be None, since HF now checks for the config
         if load_in_4bit or load_in_8bit:
             # Ignore load_in_4bit / load_in_8bit for MXFP4 - best to get config file
+            # Check for MXFP4 in auto_config
+            is_mxfp4 = False
+            if auto_config is not None:
+                quantization_config = getattr(auto_config, "quantization_config", None)
+                if quantization_config is not None:
+                    # quantization config can be a dict or an object
+                    if isinstance(quantization_config, dict):
+                        if quantization_config.get("quant_method") == "mxfp4":
+                            is_mxfp4 = True
+                    else:
+                        if getattr(quantization_config, "quant_method", None) == "mxfp4":
+                            is_mxfp4 = True
+
             if (
                 "gpt-oss-20b" in model_name.lower()
                 or "gpt-oss-120b" in model_name.lower()
+                or is_mxfp4
             ):
                 pass
             else:
