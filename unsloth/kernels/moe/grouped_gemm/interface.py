@@ -691,6 +691,10 @@ class GroupedGemm(torch.autograd.Function):
         dX_only = ctx.dX_only
         dW_only = ctx.dW_only
 
+        # Ensure dY is contiguous for both dW and dX kernels
+        # (grouped_gemm_dX asserts this, grouped_gemm_dW makes it contiguous internally)
+        dY = dY.contiguous()
+
         if not autotune:
             if not dW_only:
                 assert (

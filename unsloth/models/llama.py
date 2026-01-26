@@ -3181,6 +3181,8 @@ class FastLlamaModel:
             apply_lora_mlp = apply_lora_mlp_swiglu
         elif model_type == "qwen3moe":
             apply_lora_mlp = apply_lora_mlp_swiglu
+        elif model_type == "glm4_moe_lite":
+            apply_lora_mlp = apply_lora_mlp_swiglu
         else:
             raise NotImplementedError(f"Unsloth: {model_type} is not yet implemented!")
 
@@ -3247,9 +3249,9 @@ class FastLlamaModel:
 
         if lora_dropout == 0 and bias == "none":
             for idx, layer in enumerate(model.model.model.layers):
-                if model_type != "falcon_h1":
+                if model_type not in ("falcon_h1", "glm4_moe_lite"):
                     # LoRAMLP.apply doesn't have functionality for gate and down multipliers yet.
-                    # Don't patch falcon h1 for the time being.
+                    # Don't patch falcon h1 or glm4_moe_lite (MoE) for the time being.
 
                     # MLP patching
                     mlp_module = layer.mlp
@@ -3295,30 +3297,36 @@ class FastLlamaModel:
                         )
 
                 # QKV attention patching
-                q_proj = layer.self_attn.q_proj
-                k_proj = layer.self_attn.k_proj
-                v_proj = layer.self_attn.v_proj
-                if (
-                    hasattr(q_proj, "lora_A")
-                    and hasattr(k_proj, "lora_A")
-                    and hasattr(v_proj, "lora_A")
-                    and (getattr(q_proj, "base_layer", q_proj).bias is None)
-                    and (getattr(k_proj, "base_layer", k_proj).bias is None)
-                    and (getattr(v_proj, "base_layer", v_proj).bias is None)
-                    and (len(getattr(q_proj, "lora_magnitude_vector", []) or []) == 0)
-                    and (len(getattr(k_proj, "lora_magnitude_vector", []) or []) == 0)
-                    and (len(getattr(v_proj, "lora_magnitude_vector", []) or []) == 0)
-                ):
-                    layer.self_attn.apply_qkv = apply_lora_qkv
-                    n_qkv += 1
-                else:
-                    if model_type == "qwen2":
+                # Skip for models with MLA (Multi-head Latent Attention) like GLM4 MoE
+                if model_type == "glm4_moe_lite":
+                    # GLM4 MoE uses MLA with different projection names (q_a_proj, q_b_proj, kv_a_proj_with_mqa, kv_b_proj)
+                    # Skip standard QKV patching for now
+                    pass
+                elif hasattr(layer.self_attn, "q_proj"):
+                    q_proj = layer.self_attn.q_proj
+                    k_proj = layer.self_attn.k_proj
+                    v_proj = layer.self_attn.v_proj
+                    if (
+                        hasattr(q_proj, "lora_A")
+                        and hasattr(k_proj, "lora_A")
+                        and hasattr(v_proj, "lora_A")
+                        and (getattr(q_proj, "base_layer", q_proj).bias is None)
+                        and (getattr(k_proj, "base_layer", k_proj).bias is None)
+                        and (getattr(v_proj, "base_layer", v_proj).bias is None)
+                        and (len(getattr(q_proj, "lora_magnitude_vector", []) or []) == 0)
+                        and (len(getattr(k_proj, "lora_magnitude_vector", []) or []) == 0)
+                        and (len(getattr(v_proj, "lora_magnitude_vector", []) or []) == 0)
+                    ):
+                        layer.self_attn.apply_qkv = apply_lora_qkv
                         n_qkv += 1
                     else:
-                        logger.warning_once(
-                            "Not an error, but Unsloth cannot patch Attention layers with our manual autograd engine since either LoRA adapters\n"
-                            "are not enabled or a bias term (like in Qwen) is used."
-                        )
+                        if model_type == "qwen2":
+                            n_qkv += 1
+                        else:
+                            logger.warning_once(
+                                "Not an error, but Unsloth cannot patch Attention layers with our manual autograd engine since either LoRA adapters\n"
+                                "are not enabled or a bias term (like in Qwen) is used."
+                            )
 
                 # O attention patching
                 o_proj = layer.self_attn.o_proj

@@ -18,6 +18,7 @@ from .mistral import FastMistralModel
 from .qwen2 import FastQwen2Model
 from .qwen3 import FastQwen3Model
 from .qwen3_moe import FastQwen3MoeModel
+from .glm4_moe import FastGLM47Model
 from .granite import FastGraniteModel
 from .sentence_transformer import FastSentenceTransformer
 
