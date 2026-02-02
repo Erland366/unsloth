@@ -1,0 +1,9 @@
+dimension,value,framework,batch_size,seq_length,tokens_per_second,training_vram_gb,step_time_ms,peak_vram_gb,final_loss,status
+batch_size,1,unsloth,1,2048,2764.3,0.93,1404.3,58.73,0.4795,ok
+batch_size,1,huggingface,1,2048,1133.1,4.88,3425.9,62.7,0.5205,ok
+batch_size,2,unsloth,2,2048,4095.6,2.47,1895.6,60.28,0.4902,ok
+batch_size,2,huggingface,2,2048,1886.5,9.52,4115.4,67.36,0.5329,ok
+batch_size,4,unsloth,4,2048,5171.3,5.71,3002.6,63.49,0.4851,ok
+batch_size,4,huggingface,4,2048,2633.0,18.83,5897.2,76.68,0.5227,ok
+batch_size,8,unsloth,8,2048,5671.6,12.07,5475.4,69.87,0.4868,ok
+batch_size,8,huggingface,8,2048,3157.6,35.79,9834.7,93.63,0.5215,ok

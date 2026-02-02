@@ -1,0 +1,9 @@
+dimension,value,framework,batch_size,seq_length,tokens_per_second,training_vram_gb,step_time_ms,peak_vram_gb,final_loss,status
+seq_length,512,unsloth,2,512,1788.5,-0.12,1145.0,57.81,0.5264,ok
+seq_length,512,huggingface,2,512,684.4,3.07,2992.1,60.89,0.6777,ok
+seq_length,1024,unsloth,2,1024,3146.1,0.84,1298.9,58.76,0.51,ok
+seq_length,1024,huggingface,2,1024,1229.7,4.73,3323.3,62.55,0.5858,ok
+seq_length,2048,unsloth,2,2048,4238.0,2.3,1831.9,60.09,0.4932,ok
+seq_length,2048,huggingface,2,2048,1884.7,9.46,4119.3,67.32,0.5326,ok
+seq_length,4096,unsloth,2,4096,4284.1,5.47,2883.9,63.34,0.4629,ok
+seq_length,4096,huggingface,2,4096,2188.3,18.93,5646.1,76.78,0.4886,ok

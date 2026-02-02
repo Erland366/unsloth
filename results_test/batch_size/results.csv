@@ -1,0 +1,5 @@
+dimension,value,framework,batch_size,seq_length,tokens_per_second,training_vram_gb,step_time_ms,peak_vram_gb,final_loss,status
+batch_size,1,unsloth,1,2048,,,,,,error: Data processing error: I/O error: Permission denie
+batch_size,1,huggingface,1,2048,,,,,,error: Output 0 of UnslothFusedLossBackward is a view and
+batch_size,2,unsloth,2,2048,,,,,,error: Data processing error: I/O error: Permission denie
+batch_size,2,huggingface,2,2048,,,,,,error: Output 0 of UnslothFusedLossBackward is a view and

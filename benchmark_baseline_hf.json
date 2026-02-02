@@ -1,0 +1,17 @@
+{
+  "peak_memory_gb": 66.03515625,
+  "peak_memory_training_gb": 8.1640625,
+  "memory_percentage": 69.53208898966004,
+  "total_time_seconds": 22.531382177000523,
+  "avg_step_time_seconds": 2.2531382177000525,
+  "samples_per_second": 1.7753016519701579,
+  "tokens_per_second": 3445.63859376758,
+  "final_loss": 0.648311585187912,
+  "total_steps": 10,
+  "total_samples": 40,
+  "total_tokens": 77635,
+  "timestamp": "2026-01-28T20:49:57.492786",
+  "git_commit": "80c5b9d8",
+  "attn_implementation": "flash_attention_2",
+  "framework": "huggingface"
+}
